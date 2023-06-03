@@ -220,6 +220,18 @@ typedef enum {
 
 #endif
 
+/* RSN capabilities structure */
+
+struct rsn_caps {
+	uint16_t PreAuthSupported:1;
+	uint16_t NoPairwise:1;
+	uint16_t PTKSAReplayCounter:2;
+	uint16_t GTKSAReplayCounter:2;
+	uint16_t MFPRequired:1;
+	uint16_t MFPCapable:1;
+	uint16_t Reserved:8;
+};
+
 /**
  * enum sir_roam_op_code - Operation to be done by the callback.
  * @SIR_ROAM_SYNCH_PROPAGATION: Propagate the new BSS info after roaming.
@@ -901,6 +913,11 @@ typedef struct sSirChannelList {
 	uint8_t channelNumber[SIR_ESE_MAX_MEAS_IE_REQS];
 } tSirChannelList, *tpSirChannelList;
 
+struct sir_channel_list {
+	uint8_t numChannels;
+	uint8_t channelNumber[];
+};
+
 typedef struct sSirDFSChannelList {
 	uint32_t timeStamp[SIR_MAX_24G_5G_CHANNEL_RANGE];
 
@@ -1033,7 +1050,7 @@ typedef struct sSirSmeScanReq {
 	uint32_t oui_field_offset;
 
 	/* channelList MUST be the last field of this structure */
-	tSirChannelList channelList;
+	struct sir_channel_list channelList;
 
 	/*-----------------------------
 	   tSirSmeScanReq....
@@ -1330,6 +1347,7 @@ typedef struct sSirSmeJoinReq {
 #ifdef WLAN_FEATURE_FILS_SK
 	struct cds_fils_connection_info fils_con_info;
 #endif
+	bool sae_pmk_cached;
 	bool ignore_assoc_disallowed;
 	bool enable_bcast_probe_rsp;
 	bool force_24ghz_in_ht20;
@@ -3696,6 +3714,7 @@ typedef struct sSirRoamOffloadScanReq {
 	struct roam_fils_params roam_fils_params;
 #endif
 	struct scoring_param score_params;
+	struct rsn_caps rsn_caps;
 	struct wmi_11k_offload_params offload_11k_params;
 } tSirRoamOffloadScanReq, *tpSirRoamOffloadScanReq;
 
@@ -4313,7 +4332,7 @@ typedef struct sSirScanOffloadReq {
 	uint32_t oui_field_len;
 	uint32_t oui_field_offset;
 
-	tSirChannelList channelList;
+	struct sir_channel_list channelList;
 	/*-----------------------------
 	  sSirScanOffloadReq....
 	  -----------------------------
@@ -6791,14 +6810,34 @@ struct sir_nss_update_request {
 };
 
 /**
- * struct sir_beacon_tx_complete_rsp
- *
- * @session_id: session for which beacon update happened
- * @tx_status: status of the beacon tx from FW
+ * enum sir_bcn_update_reason: bcn update reason
+ * @REASON_DEFAULT: reason default
+ * @REASON_NSS_UPDATE: If NSS is updated
+ * @REASON_CONFIG_UPDATE: Config update
+ * @REASON_SET_HT2040: HT2040 update
+ * @REASON_COLOR_CHANGE: Color change
+ * @REASON_CHANNEL_SWITCH: channel switch
  */
-struct sir_beacon_tx_complete_rsp {
-	uint8_t session_id;
-	uint8_t tx_status;
+enum sir_bcn_update_reason {
+	REASON_DEFAULT = 0,
+	REASON_NSS_UPDATE = 1,
+	REASON_CONFIG_UPDATE = 2,
+	REASON_SET_HT2040 = 3,
+	REASON_COLOR_CHANGE = 4,
+	REASON_CHANNEL_SWITCH = 5,
+};
+
+/**
+ * struct sir_bcn_update_rsp
+ *
+ * @vdev_id: session for which bcn was updated
+ * @reason: bcn update reason
+ * @status: status of the beacon sent to FW
+ */
+struct sir_bcn_update_rsp {
+	uint8_t vdev_id;
+	enum sir_bcn_update_reason reason;
+	QDF_STATUS status;
 };
 
 typedef void (*nss_update_cb)(void *context, uint8_t tx_status, uint8_t vdev_id,
@@ -8460,6 +8499,35 @@ struct sir_roam_scan_stats {
 	uint32_t vdev_id;
 	roam_scan_stats_cb cb;
 	void *context;
+};
+/**
+ * struct sae_info - SAE info used for commit/confirm messages
+ * @msg_type: Message type
+ * @msg_len: length of message
+ * @vdev_id: vdev id
+ * @peer_mac_addr: peer MAC address
+ * @ssid: SSID
+ */
+struct sir_sae_info {
+	uint16_t msg_type;
+	uint16_t msg_len;
+	uint32_t vdev_id;
+	struct qdf_mac_addr peer_mac_addr;
+	tSirMacSSid ssid;
+};
+
+/**
+ * struct sir_sae_msg - SAE msg used for message posting
+ * @message_type: message type
+ * @length: message length
+ * @session_id: SME session id
+ * @sae_status: SAE status, 0: Success, Non-zero: Failure.
+ */
+struct sir_sae_msg {
+	uint16_t message_type;
+	uint16_t length;
+	uint16_t session_id;
+	uint8_t sae_status;
 };
 
 #endif /* __SIR_API_H */

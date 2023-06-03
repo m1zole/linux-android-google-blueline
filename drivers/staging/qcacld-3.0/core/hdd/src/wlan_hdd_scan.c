@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018, 2021 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -437,6 +437,32 @@ static int hdd_add_scan_event_from_ies(struct hdd_scan_info *scanInfo,
 	return 0;
 }
 
+void hdd_init_scan_reject_params(hdd_context_t *hdd_ctx)
+{
+	if (hdd_ctx) {
+		hdd_ctx->last_scan_reject_timestamp = 0;
+		hdd_ctx->last_scan_reject_session_id = 0xFF;
+		hdd_ctx->last_scan_reject_reason = 0;
+		hdd_ctx->scan_reject_cnt = 0;
+	}
+
+	return;
+}
+
+void hdd_reset_scan_reject_params(hdd_context_t *hdd_ctx,
+				 eRoamCmdStatus roam_status,
+				 eCsrRoamResult roam_result)
+{
+
+	if ((roam_status == eCSR_ROAM_ASSOCIATION_FAILURE) ||
+	    (roam_status == eCSR_ROAM_CANCELLED) ||
+	    (roam_result == eCSR_ROAM_RESULT_ASSOCIATED)) {
+		hdd_debug("Reset scan reject params");
+		hdd_init_scan_reject_params(hdd_ctx);
+	}
+
+	return;
+}
 
 /**
  * hdd_indicate_scan_result() - indicate scan results
@@ -650,8 +676,10 @@ static void hdd_update_dbs_scan_ctrl_ext_flag(hdd_context_t *hdd_ctx,
 		goto end;
 	}
 
-	if (hdd_ctx->config->dual_mac_feature_disable ==
-				DISABLE_DBS_CXN_AND_SCAN) {
+	if ((hdd_ctx->config->dual_mac_feature_disable ==
+	     DISABLE_DBS_CXN_AND_SCAN) ||
+	    (hdd_ctx->config->dual_mac_feature_disable ==
+	     ENABLE_DBS_CXN_AND_DISABLE_DBS_SCAN)) {
 		hdd_debug("DBS is disabled");
 		goto end;
 	}
@@ -782,19 +810,25 @@ static void hdd_scan_inactivity_timer_handler(unsigned long scan_req)
 }
 
 /**
- * wlan_hdd_scan_request_enqueue() - enqueue Scan Request
+ * wlan_hdd_schedule_scan_request() - Schedule Scan Request
  * @adapter: Pointer to the adapter
  * @scan_req: Pointer to the scan request
+ * @source: source of scan request either vendor or nl
+ * @csr_scan_req: Pointer to CSR scan request
+ * @dev: Pointer to net device structure
+ * @callback: Scan request/complete callback
  *
- * Enqueue scan request in the global HDD scan list.This list
- * stores the active scan request information.
+ * Schedule scan start request and enqueue scan request in the global
+ * HDD scan list.This list stores the active scan request information.
  *
  * Return: 0 on success, error number otherwise
  */
-static int wlan_hdd_scan_request_enqueue(hdd_adapter_t *adapter,
+static int wlan_hdd_schedule_scan_request(
+			hdd_adapter_t *adapter,
 			struct cfg80211_scan_request *scan_req,
-			uint8_t source, uint32_t scan_id,
-			uint32_t timestamp)
+			uint8_t source, tCsrScanRequest csr_scan_req,
+			struct net_device *dev,
+			csr_scan_completeCallback callback)
 {
 	hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	struct hdd_scan_req *hdd_scan_req;
@@ -810,20 +844,24 @@ static int wlan_hdd_scan_request_enqueue(hdd_adapter_t *adapter,
 	hdd_scan_req->adapter = adapter;
 	hdd_scan_req->scan_request = scan_req;
 	hdd_scan_req->source = source;
-	hdd_scan_req->scan_id = scan_id;
-	hdd_scan_req->timestamp = timestamp;
+	hdd_scan_req->scan_id = csr_scan_req.scan_id;
+	hdd_scan_req->timestamp = csr_scan_req.timestamp;
 	if (scan_req != NULL)
 		hdd_scan_req->scan_req_flags = scan_req->flags;
 	else
 		hdd_scan_req->scan_req_flags = 0;
 
 	qdf_spin_lock(&hdd_ctx->hdd_scan_req_q_lock);
-	status = qdf_list_insert_back(&hdd_ctx->hdd_scan_req_q,
-					&hdd_scan_req->node);
+	status = sme_scan_request(WLAN_HDD_GET_HAL_CTX(adapter),
+				  adapter->sessionId, &csr_scan_req,
+				  callback, dev);
+	if (QDF_STATUS_SUCCESS == status)
+		qdf_list_insert_back(&hdd_ctx->hdd_scan_req_q,
+				     &hdd_scan_req->node);
 	qdf_spin_unlock(&hdd_ctx->hdd_scan_req_q_lock);
 
 	if (QDF_STATUS_SUCCESS != status) {
-		hdd_err("Failed to enqueue Scan Req");
+		hdd_err("scan req failed with error %d", status);
 		qdf_mem_free(hdd_scan_req);
 		return -EINVAL;
 	}
@@ -1001,9 +1039,6 @@ static int __iw_set_scan(struct net_device *dev, struct iw_request_info *info,
 	hdd_adapter_t *con_sap_adapter;
 	uint16_t con_dfs_ch;
 	int ret;
-	uint8_t source;
-	struct cfg80211_scan_request *req;
-	uint32_t timestamp;
 
 	ENTER_DEV(dev);
 
@@ -1123,16 +1158,11 @@ static int __iw_set_scan(struct net_device *dev, struct iw_request_info *info,
 	scanRequest.timestamp = qdf_mc_timer_get_system_time();
 	wma_get_scan_id(&scanRequest.scan_id);
 	pAdapter->scan_info.mScanPending = true;
-	wlan_hdd_scan_request_enqueue(pAdapter, NULL, NL_SCAN,
-			scanRequest.scan_id,
-			scanRequest.timestamp);
-	status = sme_scan_request((WLAN_HDD_GET_CTX(pAdapter))->hHal,
-				  pAdapter->sessionId, &scanRequest,
-				  &hdd_scan_request_callback, dev);
+	status = wlan_hdd_schedule_scan_request(pAdapter, NULL, NL_SCAN,
+						scanRequest, dev,
+						&hdd_scan_request_callback);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		hdd_err("sme_scan_request  fail %d!!!", status);
-		wlan_hdd_scan_request_dequeue(hdd_ctx, scanRequest.scan_id,
-			&req, &source, &timestamp);
 		pAdapter->scan_info.mScanPending = false;
 		goto error;
 	}
@@ -1627,35 +1657,35 @@ static void __wlan_hdd_cfg80211_scan_block_cb(struct work_struct *work)
 	hdd_adapter_t *adapter = container_of(work,
 					      hdd_adapter_t, scan_block_work);
 	struct cfg80211_scan_request *request;
-	hdd_context_t *hdd_ctx;
+	struct hdd_scan_req *blocked_scan_req;
+	qdf_list_node_t *node = NULL;
 
 	if (WLAN_HDD_ADAPTER_MAGIC != adapter->magic) {
 		hdd_err("HDD adapter context is invalid");
 		return;
 	}
 
-	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	if (0 != wlan_hdd_validate_context(hdd_ctx))
-		return;
+	qdf_mutex_acquire(&adapter->blocked_scan_request_q_lock);
 
-	request = adapter->request;
-	if (request) {
+	while (!qdf_list_empty(&adapter->blocked_scan_request_q)) {
+		qdf_list_remove_front(&adapter->blocked_scan_request_q,
+				      &node);
+		blocked_scan_req = qdf_container_of(node, struct hdd_scan_req,
+						    node);
+		request = blocked_scan_req->scan_request;
 		request->n_ssids = 0;
 		request->n_channels = 0;
-
-		hdd_err("##In DFS Master mode. Scan aborted. Null result sent");
-		hdd_cfg80211_scan_done(adapter, request, true);
-		adapter->request = NULL;
+		if (blocked_scan_req->source == NL_SCAN) {
+			hdd_err("Scan aborted. Null result sent");
+			hdd_cfg80211_scan_done(adapter, request, true);
+		} else {
+			hdd_err("Vendor scan aborted. Null result sent");
+			hdd_vendor_scan_callback(adapter, request, true);
+		}
+		qdf_mem_free(blocked_scan_req);
 	}
-	request = adapter->vendor_request;
-	if (request) {
-		request->n_ssids = 0;
-		request->n_channels = 0;
 
-		hdd_err("In DFS Master mode. Scan aborted. Null result sent");
-		hdd_vendor_scan_callback(adapter, request, true);
-		adapter->vendor_request = NULL;
-	}
+	qdf_mutex_release(&adapter->blocked_scan_request_q_lock);
 }
 
 void wlan_hdd_cfg80211_scan_block_cb(struct work_struct *work)
@@ -1921,6 +1951,43 @@ static void wlan_hdd_free_voui(tCsrScanRequest *scan_req)
 		qdf_mem_free(scan_req->voui);
 }
 
+static int
+wlan_hdd_enqueue_blocked_scan_request(struct net_device *dev,
+				      struct cfg80211_scan_request *request,
+				      uint8_t source)
+{
+	hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	struct hdd_scan_req *blocked_scan_req =
+		qdf_mem_malloc(sizeof(*blocked_scan_req));
+	int ret = 0;
+
+	if (!blocked_scan_req) {
+		hdd_err("Failed to allocate scan_req");
+		return -EINVAL;
+	}
+
+	blocked_scan_req->adapter = adapter;
+	blocked_scan_req->scan_request = request;
+	blocked_scan_req->source = source;
+	blocked_scan_req->scan_id = 0;
+
+	qdf_mutex_acquire(&adapter->blocked_scan_request_q_lock);
+	if (qdf_list_size(&adapter->blocked_scan_request_q) <
+		CFG_MAX_SCAN_COUNT_MAX)
+		qdf_list_insert_back(&adapter->blocked_scan_request_q,
+				     &blocked_scan_req->node);
+	else
+		ret = -EINVAL;
+	qdf_mutex_release(&adapter->blocked_scan_request_q_lock);
+
+	if (ret) {
+		hdd_err("Maximum number of block scan request reached!");
+		qdf_mem_free(blocked_scan_req);
+	}
+
+	return ret;
+}
+
 /* Define short name to use in cds_trigger_recovery */
 #define SCAN_FAILURE CDS_SCAN_ATTEMPT_FAILURES
 
@@ -1957,8 +2024,6 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 	uint8_t curr_session_id;
 	scan_reject_states curr_reason;
 	static uint32_t scan_ebusy_cnt;
-	struct cfg80211_scan_request *req;
-	uint32_t timestamp;
 	uint32_t scan_req_id;
 
 	ENTER();
@@ -1988,10 +2053,8 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 						conn_info.connState) &&
 	    (!pHddCtx->config->enable_connected_scan)) {
 		hdd_info("enable_connected_scan is false, Aborting scan");
-		if (NL_SCAN == source)
-			pAdapter->request = request;
-		else
-			pAdapter->vendor_request = request;
+		if (wlan_hdd_enqueue_blocked_scan_request(dev, request, source))
+			return -EAGAIN;
 		schedule_work(&pAdapter->scan_block_work);
 		return 0;
 	}
@@ -2048,16 +2111,17 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 			 * startup.
 			 */
 			hdd_err("##In DFS Master mode. Scan aborted");
-			if (NL_SCAN == source)
-				pAdapter->request = request;
-			else
-				pAdapter->vendor_request = request;
+			if (wlan_hdd_enqueue_blocked_scan_request(dev, request,
+								  source))
+				return -EAGAIN;
 			schedule_work(&pAdapter->scan_block_work);
 			return 0;
 		}
 	}
-	if (pHddCtx->config->dual_mac_feature_disable ==
-				DISABLE_DBS_CXN_AND_SCAN) {
+	if ((pHddCtx->config->dual_mac_feature_disable ==
+	     DISABLE_DBS_CXN_AND_SCAN) ||
+	    (pHddCtx->config->dual_mac_feature_disable ==
+	     ENABLE_DBS_CXN_AND_DISABLE_DBS_SCAN)) {
 		if (true == pScanInfo->mScanPending) {
 			scan_ebusy_cnt++;
 			if (MAX_PENDING_LOG >
@@ -2108,19 +2172,20 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 		    !pHddCtx->last_scan_reject_timestamp) {
 			pHddCtx->last_scan_reject_session_id = curr_session_id;
 			pHddCtx->last_scan_reject_reason = curr_reason;
-			pHddCtx->last_scan_reject_timestamp =
-				jiffies_to_msecs(jiffies) +
-				SCAN_REJECT_THRESHOLD_TIME;
+			pHddCtx->last_scan_reject_timestamp = jiffies +
+				msecs_to_jiffies(SCAN_REJECT_THRESHOLD_TIME);
 			pHddCtx->scan_reject_cnt = 0;
 		} else {
 			pHddCtx->scan_reject_cnt++;
 			if ((pHddCtx->scan_reject_cnt >=
 			   SCAN_REJECT_THRESHOLD) &&
-			   qdf_system_time_after(jiffies_to_msecs(jiffies),
+			   qdf_system_time_after(jiffies,
 			   pHddCtx->last_scan_reject_timestamp)) {
-				hdd_err("scan reject threshold reached Session %d Reason %d count %d",
+				hdd_err("scan reject threshold reached Session %d Reason %d count %d reject timestamp %lu jiffies %lu",
 					curr_session_id, curr_reason,
-					pHddCtx->scan_reject_cnt);
+					pHddCtx->scan_reject_cnt,
+					pHddCtx->last_scan_reject_timestamp,
+					jiffies);
 				pHddCtx->last_scan_reject_timestamp = 0;
 				pHddCtx->scan_reject_cnt = 0;
 				if (pHddCtx->config->enable_fatal_event) {
@@ -2141,19 +2206,16 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 		}
 		return -EBUSY;
 	}
-	pHddCtx->last_scan_reject_timestamp = 0;
-	pHddCtx->last_scan_reject_session_id = 0xFF;
-	pHddCtx->last_scan_reject_reason = 0;
-	pHddCtx->scan_reject_cnt = 0;
+
+	/* reinit the scan reject params */
+	hdd_init_scan_reject_params(pHddCtx);
 
 	/* Check whether SAP scan can be skipped or not */
 	if (pAdapter->device_mode == QDF_SAP_MODE &&
 	   wlan_hdd_sap_skip_scan_check(pHddCtx, request)) {
 		hdd_debug("sap scan skipped");
-		if (NL_SCAN == source)
-			pAdapter->request = request;
-		else
-			pAdapter->vendor_request = request;
+		if (wlan_hdd_enqueue_blocked_scan_request(dev, request, source))
+			return -EAGAIN;
 		schedule_work(&pAdapter->scan_block_work);
 		return 0;
 	}
@@ -2414,12 +2476,10 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 	qdf_runtime_pm_prevent_suspend(&pHddCtx->runtime_context.scan);
 	wma_get_scan_id(&scan_req_id);
 	scan_req.scan_id = scan_req_id;
-	wlan_hdd_scan_request_enqueue(pAdapter, request, source,
-			scan_req.scan_id, scan_req.timestamp);
 	pAdapter->scan_info.mScanPending = true;
-	status = sme_scan_request(WLAN_HDD_GET_HAL_CTX(pAdapter),
-				pAdapter->sessionId, &scan_req,
-				&hdd_cfg80211_scan_done_callback, dev);
+	status = wlan_hdd_schedule_scan_request(
+				pAdapter, request, source, scan_req, dev,
+				&hdd_cfg80211_scan_done_callback);
 
 	if (QDF_STATUS_SUCCESS != status) {
 		hdd_err_ratelimited(HDD_SCAN_REJECT_RATE_LIMIT,
@@ -2433,9 +2493,6 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 		} else {
 			status = -EIO;
 		}
-		wlan_hdd_scan_request_dequeue(pHddCtx, scan_req.scan_id,
-				&req, &source,
-				&timestamp);
 		pAdapter->scan_info.mScanPending = false;
 		qdf_runtime_pm_allow_suspend(&pHddCtx->runtime_context.scan);
 		hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_SCAN);
@@ -2645,6 +2702,16 @@ static int wlan_hdd_vendor_scan_random_attr(struct wiphy *wiphy,
 	    (wdev->current_bss)) {
 		hdd_err("SCAN RANDOMIZATION not supported");
 		return -EOPNOTSUPP;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_SCAN_MAC] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_SCAN_MAC_MASK]) {
+		qdf_mem_zero(request->mac_addr, QDF_MAC_ADDR_SIZE);
+		qdf_mem_zero(request->mac_addr_mask, QDF_MAC_ADDR_SIZE);
+		request->mac_addr[0] = 0x2;
+		request->mac_addr_mask[0] = 0x3;
+
+		return 0;
 	}
 
 	if (!tb[QCA_WLAN_VENDOR_ATTR_SCAN_MAC] ||

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2018, 2021 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -556,6 +556,15 @@ struct ol_txrx_stats_req_internal {
     int offset;
 };
 
+struct ol_txrx_fw_stats_desc_t {
+	struct ol_txrx_stats_req_internal *req;
+	unsigned char desc_id;
+};
+
+struct ol_txrx_fw_stats_desc_elem_t {
+	struct ol_txrx_fw_stats_desc_elem_t *next;
+	struct ol_txrx_fw_stats_desc_t desc;
+};
 
 /*
  * As depicted in the diagram below, the pdev contains an array of
@@ -668,6 +677,14 @@ struct ol_txrx_pdev_t {
 	qdf_atomic_t target_tx_credit;
 	qdf_atomic_t orig_target_tx_credit;
 
+	struct {
+		uint16_t pool_size;
+		struct ol_txrx_fw_stats_desc_elem_t *pool;
+		struct ol_txrx_fw_stats_desc_elem_t *freelist;
+		qdf_spinlock_t pool_lock;
+		qdf_atomic_t initialized;
+	} ol_txrx_fw_stats_desc_pool;
+
 	/* Peer mac address to staid mapping */
 	struct ol_mac_addr mac_to_staid[WLAN_MAX_STA_COUNT + 3];
 
@@ -769,7 +786,7 @@ struct ol_txrx_pdev_t {
 	struct {
 		int (*cmp)(union htt_rx_pn_t *new,
 			   union htt_rx_pn_t *old,
-			   int is_unicast, int opmode);
+			   int is_unicast, int opmode, bool strict_chk);
 		int len;
 	} rx_pn[htt_num_sec_types];
 
@@ -1352,8 +1369,7 @@ struct ol_txrx_peer_t {
 	u_int16_t tx_pause_flag;
 #endif
 	qdf_time_t last_assoc_rcvd;
-	qdf_time_t last_disassoc_rcvd;
-	qdf_time_t last_deauth_rcvd;
+	qdf_time_t last_disassoc_deauth_rcvd;
 	qdf_atomic_t fw_create_pending;
 	qdf_timer_t peer_unmap_timer;
 };

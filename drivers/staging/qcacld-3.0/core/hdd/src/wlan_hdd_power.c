@@ -79,6 +79,7 @@
 #include <wlan_logging_sock_svc.h>
 #include "cds_utils.h"
 #include "wlan_hdd_packet_filter_api.h"
+#include "cds_concurrency.h"
 
 /* Preprocessor definitions and constants */
 #define HDD_SSR_BRING_UP_TIME 30000
@@ -1654,10 +1655,8 @@ QDF_STATUS hdd_wlan_re_init(void)
 	/* Restart all adapters */
 	hdd_start_all_adapters(pHddCtx);
 
-	pHddCtx->last_scan_reject_session_id = 0xFF;
-	pHddCtx->last_scan_reject_reason = 0;
-	pHddCtx->last_scan_reject_timestamp = 0;
-	pHddCtx->scan_reject_cnt = 0;
+	/* init the scan reject params */
+	hdd_init_scan_reject_params(pHddCtx);
 
 	hdd_set_roaming_in_progress(false);
 	complete(&pAdapter->roaming_comp_var);
@@ -1986,6 +1985,11 @@ static int __wlan_hdd_cfg80211_suspend_wlan(struct wiphy *wiphy,
 		return 0;
 	}
 	mutex_unlock(&pHddCtx->iface_change_lock);
+
+	if (cds_is_connection_in_progress(NULL, NULL)) {
+		hdd_err("Suspend rejected: conn in progress");
+		return -EINVAL;
+	}
 
 	/* If RADAR detection is in progress (HDD), prevent suspend. The flag
 	 * "dfs_cac_block_tx" is set to true when RADAR is found and stay true

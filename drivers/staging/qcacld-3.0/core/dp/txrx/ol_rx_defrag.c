@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018, 2021 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -316,6 +316,26 @@ void ol_rx_frag_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
 
 #endif
 
+#ifndef CONFIG_HL_SUPPORT
+static int ol_rx_frag_get_inord_msdu_cnt(qdf_nbuf_t rx_ind_msg)
+{
+	uint32_t *msg_word;
+	uint8_t *rx_ind_data;
+	uint32_t msdu_cnt;
+
+	rx_ind_data = qdf_nbuf_data(rx_ind_msg);
+	msg_word = (uint32_t *)rx_ind_data;
+	msdu_cnt = HTT_RX_IN_ORD_PADDR_IND_MSDU_CNT_GET(*(msg_word + 1));
+
+	return msdu_cnt;
+}
+#else
+static int ol_rx_frag_get_inord_msdu_cnt(qdf_nbuf_t rx_ind_msg)
+{
+	return 0;
+}
+#endif
+
 /*
  * Process incoming fragments
  */
@@ -353,7 +373,10 @@ ol_rx_frag_indication_handler(ol_txrx_pdev_handle pdev,
 		 * separate from normal frames
 		 */
 		ol_rx_reorder_flush_frag(htt_pdev, peer, tid, seq_num_start);
+	} else {
+		msdu_count = ol_rx_frag_get_inord_msdu_cnt(rx_frag_ind_msg);
 	}
+
 	pktlog_bit =
 		(htt_rx_amsdu_rx_in_order_get_pktlog(rx_frag_ind_msg) == 0x01);
 	ret = htt_rx_frag_pop(htt_pdev, rx_frag_ind_msg, &head_msdu,
@@ -389,7 +412,11 @@ ol_rx_frag_indication_handler(ol_txrx_pdev_handle pdev,
 		htt_rx_desc_frame_free(htt_pdev, head_msdu);
 	}
 	/* request HTT to provide new rx MSDU buffers for the target to fill. */
-	htt_rx_msdu_buff_replenish(htt_pdev);
+	if (ol_cfg_is_full_reorder_offload(pdev->ctrl_pdev) &&
+	    !pdev->cfg.is_high_latency)
+		htt_rx_msdu_buff_in_order_replenish(htt_pdev, msdu_count);
+	else
+		htt_rx_msdu_buff_replenish(htt_pdev);
 }
 
 /*
@@ -425,6 +452,8 @@ ol_rx_reorder_store_frag(ol_txrx_pdev_handle pdev,
 	struct ol_rx_reorder_array_elem_t *rx_reorder_array_elem;
 	uint16_t frxseq, rxseq, seq;
 	htt_pdev_handle htt_pdev = pdev->htt_pdev;
+	void *rx_desc;
+	uint8_t index;
 
 	seq = seq_num & peer->tids_rx_reorder[tid].win_sz_mask;
 	qdf_assert(seq == 0);
@@ -437,6 +466,28 @@ ol_rx_reorder_store_frag(ol_txrx_pdev_handle pdev,
 	fragno = qdf_le16_to_cpu(*(uint16_t *) mac_hdr->i_seq) &
 		IEEE80211_SEQ_FRAG_MASK;
 	more_frag = mac_hdr->i_fc[1] & IEEE80211_FC1_MORE_FRAG;
+
+	rx_desc = htt_rx_msdu_desc_retrieve(htt_pdev, frag);
+	qdf_assert(htt_rx_msdu_has_wlan_mcast_flag(htt_pdev, rx_desc));
+	index = htt_rx_msdu_is_wlan_mcast(htt_pdev, rx_desc) ?
+		txrx_sec_mcast : txrx_sec_ucast;
+
+	/*
+	 * Multicast/Broadcast frames should not be fragmented so drop
+	 * such frames.
+	 */
+	if (index != txrx_sec_ucast) {
+		ol_rx_frames_free(htt_pdev, frag);
+		return;
+	}
+
+	if (peer->security[index].sec_type != htt_sec_type_none &&
+	    !htt_rx_mpdu_is_encrypted(htt_pdev, rx_desc)) {
+		ol_txrx_err("Unencrypted fragment received in security mode %d",
+			    peer->security[index].sec_type);
+		ol_rx_frames_free(htt_pdev, frag);
+		return;
+	}
 
 	if ((!more_frag) && (!fragno) && (!rx_reorder_array_elem->head)) {
 	ol_rx_fraglist_insert(htt_pdev, &rx_reorder_array_elem->head,
@@ -679,7 +730,13 @@ ol_rx_defrag(ol_txrx_pdev_handle pdev,
 	while (cur) {
 		tmp_next = qdf_nbuf_next(cur);
 		qdf_nbuf_set_next(cur, NULL);
-		if (!ol_rx_pn_check_base(vdev, peer, tid, cur)) {
+		/*
+		 * Strict PN check between the first fragment of the current
+		 * frame and the last fragment of the previous frame is not
+		 * necessary.
+		 */
+		if (!ol_rx_pn_check_base(vdev, peer, tid, cur,
+					 (cur == frag_list) ? false : true)) {
 			/* PN check failed,discard frags */
 			if (prev) {
 				qdf_nbuf_set_next(prev, NULL);
@@ -879,7 +936,7 @@ ol_rx_frag_tkip_demic(ol_txrx_pdev_handle pdev, const uint8_t *key,
 
 	ol_rx_defrag_copydata(msdu, pktlen - f_tkip.ic_miclen + rx_desc_len,
 			      f_tkip.ic_miclen, (caddr_t) mic0);
-	if (!qdf_mem_cmp(mic, mic0, f_tkip.ic_miclen))
+	if (qdf_mem_cmp(mic, mic0, f_tkip.ic_miclen))
 		return OL_RX_DEFRAG_ERR;
 
 	qdf_nbuf_trim_tail(msdu, f_tkip.ic_miclen);

@@ -737,7 +737,7 @@ static void lim_print_ht_cap(tpAniSirGlobal mac_ctx, tpPESession session,
  *
  * wpa ie related checks
  *
- * Return: true of no error, false otherwise
+ * Return: true if no error, false otherwise
  */
 static bool lim_chk_n_process_wpa_rsn_ie(tpAniSirGlobal mac_ctx,
 					 tpSirMacMgmtHdr hdr,
@@ -746,6 +746,7 @@ static bool lim_chk_n_process_wpa_rsn_ie(tpAniSirGlobal mac_ctx,
 					 uint8_t sub_type, bool *pmf_connection)
 {
 	uint8_t *wps_ie = NULL;
+	uint32_t ret;
 	tDot11fIEWPA dot11f_ie_wpa = {0};
 	tDot11fIERSN dot11f_ie_rsn = {0};
 	tSirRetStatus status = eSIR_SUCCESS;
@@ -776,11 +777,11 @@ static bool lim_chk_n_process_wpa_rsn_ie(tpAniSirGlobal mac_ctx,
 			if (assoc_req->rsnPresent) {
 				if (assoc_req->rsn.length) {
 					/* Unpack the RSN IE */
-					if (dot11f_unpack_ie_rsn(mac_ctx,
+					ret = dot11f_unpack_ie_rsn(mac_ctx,
 						&assoc_req->rsn.info[0],
 						assoc_req->rsn.length,
-						&dot11f_ie_rsn, false) !=
-							DOT11F_PARSE_SUCCESS) {
+						&dot11f_ie_rsn, false);
+					if (!DOT11F_SUCCEEDED(ret)) {
 						pe_err("Invalid RSN ie");
 						return false;
 					}
@@ -852,11 +853,11 @@ static bool lim_chk_n_process_wpa_rsn_ie(tpAniSirGlobal mac_ctx,
 				/* Unpack the WPA IE */
 				if (assoc_req->wpa.length) {
 					/* OUI is not taken care */
-					if (dot11f_unpack_ie_wpa(mac_ctx,
-						&assoc_req->wpa.info[4],
-						assoc_req->wpa.length,
-						&dot11f_ie_wpa, false) !=
-							DOT11F_PARSE_SUCCESS) {
+					ret = dot11f_unpack_ie_wpa(mac_ctx,
+						   &assoc_req->wpa.info[4],
+						   (assoc_req->wpa.length - 4),
+						   &dot11f_ie_wpa, false);
+					if (!DOT11F_SUCCEEDED(ret)) {
 						pe_err("Invalid WPA IE");
 						return false;
 					}
@@ -1844,9 +1845,15 @@ void lim_process_assoc_req_frame(tpAniSirGlobal mac_ctx, uint8_t *rx_pkt_info,
 	if ((session->access_policy_vendor_ie) &&
 		(session->access_policy ==
 		LIM_ACCESS_POLICY_RESPOND_IF_IE_IS_PRESENT)) {
+		if (frame_len <= LIM_ASSOC_REQ_IE_OFFSET) {
+			pe_debug("Received action frame of invalid len %d",
+				 frame_len);
+			return;
+		}
 		if (!cfg_get_vendor_ie_ptr_from_oui(mac_ctx,
 			&session->access_policy_vendor_ie[2],
-			3, frm_body + LIM_ASSOC_REQ_IE_OFFSET, frame_len)) {
+			3, frm_body + LIM_ASSOC_REQ_IE_OFFSET,
+			frame_len - LIM_ASSOC_REQ_IE_OFFSET)) {
 			pe_err("Vendor ie not present and access policy is %x, Rejected association",
 				session->access_policy);
 			lim_send_assoc_rsp_mgmt_frame(mac_ctx,
@@ -2196,19 +2203,9 @@ static void fill_mlm_assoc_ind_vht(tpSirAssocReq assocreq,
 	}
 }
 
-/**
- * lim_send_mlm_assoc_ind() - Sends assoc indication to SME
- * @mac_ctx: Global Mac context
- * @sta_ds: Station DPH hash entry
- * @session_entry: PE session entry
- *
- * This function sends either LIM_MLM_ASSOC_IND
- * or LIM_MLM_REASSOC_IND to SME.
- *
- * Return: None
- */
-void lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
-	tpDphHashNode sta_ds, tpPESession session_entry)
+QDF_STATUS lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
+				  tpDphHashNode sta_ds,
+				  tpPESession session_entry)
 {
 	tpLimMlmAssocInd assoc_ind = NULL;
 	tpSirAssocReq assoc_req;
@@ -2245,7 +2242,7 @@ void lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
 			lim_release_peer_idx(mac_ctx, sta_ds->assocId,
 				session_entry);
 			pe_err("AllocateMemory failed for assoc_ind");
-			return;
+			return QDF_STATUS_E_NOMEM;
 		}
 		qdf_mem_copy((uint8_t *) assoc_ind->peerMacAddr,
 			(uint8_t *) sta_ds->staAddr, sizeof(tSirMacAddr));
@@ -2298,7 +2295,7 @@ void lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
 				pe_err("rsnIEdata index out of bounds: %d",
 					rsn_len);
 				qdf_mem_free(assoc_ind);
-				return;
+				return QDF_STATUS_E_INVAL;
 			}
 			assoc_ind->rsnIE.rsnIEdata[rsn_len] =
 				SIR_MAC_WPA_EID;
@@ -2450,5 +2447,5 @@ void lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
 			 (uint32_t *) assoc_ind);
 		qdf_mem_free(assoc_ind);
 	}
-	return;
+	return QDF_STATUS_SUCCESS;
 }

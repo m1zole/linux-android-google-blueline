@@ -466,8 +466,21 @@ tSirRetStatus lim_process_auth_frame_no_session(tpAniSirGlobal pMac, uint8_t *,
 						void *body);
 
 void lim_process_assoc_req_frame(tpAniSirGlobal, uint8_t *, uint8_t, tpPESession);
-void lim_send_mlm_assoc_ind(tpAniSirGlobal pMac, tpDphHashNode pStaDs,
-			    tpPESession psessionEntry);
+
+/**
+ * lim_send_mlm_assoc_ind() - Sends assoc indication to SME
+ * @mac_ctx: Global Mac context
+ * @sta_ds: Station DPH hash entry
+ * @session_entry: PE session entry
+ *
+ * This function sends either LIM_MLM_ASSOC_IND
+ * or LIM_MLM_REASSOC_IND to SME.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
+				  tpDphHashNode sta_ds,
+				  tpPESession session_entry);
 
 void lim_process_assoc_rsp_frame(tpAniSirGlobal, uint8_t *, uint8_t, tpPESession);
 void lim_process_disassoc_frame(tpAniSirGlobal, uint8_t *, tpPESession);
@@ -870,20 +883,15 @@ lim_get_ielen_from_bss_description(tpSirBssDescription pBssDescr)
 } /*** end lim_get_ielen_from_bss_description() ***/
 
 /**
- * lim_send_beacon_ind()
+ * lim_send_beacon_ind() - send the beacon indication
+ * @mac_ctx: pointer to mac structure
+ * @session: pe session
+ * @reason: beacon update reason
  *
- ***FUNCTION:
- * This function is called  to send the beacon indication
- * number being scanned.
- *
- ***PARAMS:
- *
- ***LOGIC:
- *
- ***ASSUMPTIONS:
+ * return: success: QDF_STATUS_SUCCESS failure: QDF_STATUS_E_FAILURE
  */
-
-void lim_send_beacon_ind(tpAniSirGlobal pMac, tpPESession psessionEntry);
+QDF_STATUS lim_send_beacon_ind(tpAniSirGlobal mac_ctx, tpPESession session,
+			       enum sir_bcn_update_reason reason);
 
 void
 lim_send_vdev_restart(tpAniSirGlobal pMac, tpPESession psessionEntry,
@@ -948,6 +956,15 @@ tSirRetStatus lim_process_sme_del_all_tdls_peers(tpAniSirGlobal p_mac,
 #endif
 
 /**
+ * lim_send_bcn_rsp() - handle beacon send response
+ * @mac_ctx Pointer to Global MAC structure
+ * @rsp: beacon send response
+ *
+ * Return: None
+ */
+void lim_send_bcn_rsp(tpAniSirGlobal mac_ctx, tpSendbeaconParams rsp);
+
+/**
  * lim_process_rx_channel_status_event() - processes
  * event WDA_RX_CHN_STATUS_EVENT
  * @mac_ctx Pointer to Global MAC structure
@@ -1007,5 +1024,15 @@ void lim_process_auth_failure_timeout(tpAniSirGlobal mac_ctx);
  */
 void lim_process_assoc_failure_timeout(tpAniSirGlobal mac_ctx,
 						     uint32_t msg_type);
+
+/**
+ * lim_send_mgmt_frame_tx() - Sends mgmt frame
+ * @mac_ctx Pointer to Global MAC structure
+ * @msg: Received message info
+ *
+ * Return: None
+ */
+void lim_send_mgmt_frame_tx(tpAniSirGlobal mac_ctx,
+		uint32_t *msg_buf);
 
 #endif /* __LIM_TYPES_H */

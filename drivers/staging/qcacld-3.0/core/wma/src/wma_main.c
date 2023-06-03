@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -6600,7 +6600,7 @@ static void wma_set_wifi_start_packet_stats(void *wma_handle,
 		return;
 	}
 
-	if (start_log->verbose_level == WLAN_LOG_LEVEL_ACTIVE) {
+	if (start_log->verbose_level >= WLAN_LOG_LEVEL_REPRO) {
 		pktlog_enable(scn, log_state, start_log->ini_triggered,
 			      start_log->user_triggered,
 			      start_log->is_iwpriv_command);
@@ -7521,7 +7521,6 @@ QDF_STATUS wma_mc_process_msg(void *cds_context, cds_msg_t *msg)
 		break;
 	case WMA_SEND_BEACON_REQ:
 		wma_send_beacon(wma_handle, (tpSendbeaconParams) msg->bodyptr);
-		qdf_mem_free(msg->bodyptr);
 		break;
 	case WMA_SEND_PROBE_RSP_TMPL:
 		wma_send_probe_rsp_tmpl(wma_handle,
@@ -8305,8 +8304,10 @@ QDF_STATUS wma_mc_process_msg(void *cds_context, cds_msg_t *msg)
 	case SIR_HAL_SET_DEL_PMKID_CACHE:
 		wma_set_del_pmkid_cache(wma_handle,
 			(wmi_pmk_cache *) msg->bodyptr, msg->reserved);
-		if (msg->bodyptr)
+		if (msg->bodyptr) {
+			qdf_mem_zero(msg->bodyptr, sizeof(wmi_pmk_cache));
 			qdf_mem_free(msg->bodyptr);
+		}
 		break;
 	case SIR_HAL_HLP_IE_INFO:
 		wma_roam_scan_send_hlp(wma_handle,

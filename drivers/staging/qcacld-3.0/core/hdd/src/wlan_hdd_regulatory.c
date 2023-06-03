@@ -50,6 +50,9 @@
 #define REG_RULE_2467_2472    REG_RULE(2467-10, 2472+10, 40, 0, 20, \
 		NL80211_RRF_PASSIVE_SCAN | NL80211_RRF_NO_IBSS)
 
+#define REG_RULE_2467_2467    REG_RULE(2467-10, 2467+10, 40, 0, 20, \
+		NL80211_RRF_PASSIVE_SCAN | NL80211_RRF_NO_IBSS)
+
 #define REG_RULE_2484         REG_RULE(2484-10, 2484+10, 20, 0, 20, \
 		NL80211_RRF_PASSIVE_SCAN | NL80211_RRF_NO_IBSS | \
 				       NL80211_RRF_NO_OFDM)
@@ -78,9 +81,9 @@ hdd_world_regrules_60_61_62 = {
 	.alpha2 =  "00",
 	.reg_rules = {
 		REG_RULE_2412_2462,
-		REG_RULE_2467_2472,
+		REG_RULE_2467_2467,
 		REG_RULE_5180_5320,
-		REG_RULE_5500_5700,
+		REG_RULE_5500_5720,
 		REG_RULE_5745_5825,
 	}
 };
@@ -324,6 +327,53 @@ static int is_wiphy_custom_regulatory(struct wiphy *wiphy)
 }
 #endif
 
+static bool reg_does_bw_fit(const struct ieee80211_freq_range *freq_range,
+			    u32 center_freq_khz, u32 bw_khz)
+{
+	u32 start_freq_khz, end_freq_khz;
+
+	start_freq_khz = center_freq_khz - (bw_khz / 2);
+	end_freq_khz = center_freq_khz + (bw_khz / 2);
+
+	if (start_freq_khz >= freq_range->start_freq_khz &&
+	    end_freq_khz <= freq_range->end_freq_khz)
+		return true;
+
+	return false;
+}
+
+
+static u32 reg_rule_to_chan_bw_flags(const struct ieee80211_reg_rule *reg_rule,
+				     const struct ieee80211_channel *chan)
+{
+	const struct ieee80211_freq_range *freq_range;
+	u32 max_bandwidth_khz, bw_flags = 0;
+
+	freq_range = &reg_rule->freq_range;
+
+	max_bandwidth_khz = freq_range->max_bandwidth_khz;
+
+	/* If we get a reg_rule we can assume that at least 5Mhz fit */
+	if (!reg_does_bw_fit(freq_range, MHZ_TO_KHZ(chan->center_freq),
+			     MHZ_TO_KHZ(10)))
+		bw_flags |= IEEE80211_CHAN_NO_10MHZ;
+	if (!reg_does_bw_fit(freq_range, MHZ_TO_KHZ(chan->center_freq),
+			     MHZ_TO_KHZ(20)))
+		bw_flags |= IEEE80211_CHAN_NO_20MHZ;
+
+	if (max_bandwidth_khz < MHZ_TO_KHZ(10))
+		bw_flags |= IEEE80211_CHAN_NO_10MHZ;
+	if (max_bandwidth_khz < MHZ_TO_KHZ(20))
+		bw_flags |= IEEE80211_CHAN_NO_20MHZ;
+	if (max_bandwidth_khz < MHZ_TO_KHZ(40))
+		bw_flags |= IEEE80211_CHAN_NO_HT40;
+	if (max_bandwidth_khz < MHZ_TO_KHZ(80))
+		bw_flags |= IEEE80211_CHAN_NO_80MHZ;
+	if (max_bandwidth_khz < MHZ_TO_KHZ(160))
+		bw_flags |= IEEE80211_CHAN_NO_160MHZ;
+	return bw_flags;
+}
+
 
 /**
  * hdd_modify_wiphy() - modify wiphy
@@ -336,6 +386,7 @@ static void hdd_modify_wiphy(struct wiphy  *wiphy,
 			     struct ieee80211_channel *chan)
 {
 	const struct ieee80211_reg_rule *reg_rule;
+	u32 bw_flags;
 
 	if (is_wiphy_custom_regulatory(wiphy)) {
 		reg_rule = freq_reg_info(wiphy, MHZ_TO_KHZ(chan->center_freq));
@@ -362,6 +413,44 @@ static void hdd_modify_wiphy(struct wiphy  *wiphy,
 
 			chan->max_power =
 				MBM_TO_DBM(reg_rule->power_rule.max_eirp);
+
+			bw_flags = reg_rule_to_chan_bw_flags(reg_rule, chan);
+
+			if (!(bw_flags & IEEE80211_CHAN_NO_10MHZ) &&
+			    (chan->flags & IEEE80211_CHAN_NO_10MHZ)) {
+				hdd_info("remove %u mhz restriction for %u",
+					 10, chan->center_freq);
+				chan->flags &= ~IEEE80211_CHAN_NO_10MHZ;
+			}
+
+			if (!(bw_flags & IEEE80211_CHAN_NO_20MHZ) &&
+			    (chan->flags & IEEE80211_CHAN_NO_20MHZ)) {
+				hdd_info("remove %u mhz restriction for %u",
+					 20, chan->center_freq);
+				chan->flags &= ~IEEE80211_CHAN_NO_20MHZ;
+			}
+
+			if (!(bw_flags & IEEE80211_CHAN_NO_HT40) &&
+			    ((chan->flags & IEEE80211_CHAN_NO_HT40) ==
+			     IEEE80211_CHAN_NO_HT40)) {
+				hdd_info("remove %u mhz restriction for %u",
+					 40, chan->center_freq);
+				chan->flags &= ~IEEE80211_CHAN_NO_HT40;
+			}
+
+			if (!(bw_flags & IEEE80211_CHAN_NO_80MHZ) &&
+			    (chan->flags & IEEE80211_CHAN_NO_80MHZ)) {
+				hdd_info("remove %u mhz restriction for %u",
+					 80, chan->center_freq);
+				chan->flags &= ~IEEE80211_CHAN_NO_80MHZ;
+			}
+
+			if (!(bw_flags & IEEE80211_CHAN_NO_160MHZ) &&
+			    (chan->flags & IEEE80211_CHAN_NO_160MHZ)) {
+				hdd_info("remove %u mhz restriction for %u",
+					 160, chan->center_freq);
+				chan->flags &= ~IEEE80211_CHAN_NO_160MHZ;
+			}
 		}
 	}
 }
@@ -535,9 +624,18 @@ static void hdd_process_regulatory_data(hdd_context_t *hdd_ctx,
 			} else {
 				cds_chan->state = CHANNEL_STATE_ENABLE;
 			}
+			/* This check is to mark SRD as passive if ini is 0 */
+			if (!hdd_ctx->config->etsi_srd_chan_in_master_mode &&
+			    cds_is_etsi13_regdmn_srd_chan(
+						    wiphy_chan->center_freq)) {
+				hdd_debug("freq %d is SRD, marked as passive",
+					  wiphy_chan->center_freq);
+				wiphy_chan->flags |=
+						IEEE80211_CHAN_PASSIVE_SCAN;
+				cds_chan->state = CHANNEL_STATE_DFS;
+			}
 			cds_chan->pwr_limit = wiphy_chan->max_power;
 			cds_chan->flags = wiphy_chan->flags;
-
 		}
 	}
 
@@ -723,7 +821,7 @@ int hdd_apply_cached_country_info(hdd_context_t *hdd_ctx)
 	ret_val = hdd_update_regulatory_info(hdd_ctx);
 	if (ret_val)
 		return ret_val;
-
+	cds_fill_and_send_ctl_to_fw(&hdd_ctx->reg);
 	hdd_process_regulatory_data(hdd_ctx, hdd_ctx->wiphy,
 				    hdd_ctx->reg.reset);
 
@@ -851,8 +949,6 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 		}
 		sme_generic_change_country_code(hdd_ctx->hHal,
 						hdd_ctx->reg.alpha2);
-
-		cds_fill_and_send_ctl_to_fw(&hdd_ctx->reg);
 
 		cds_get_dfs_region(&dfs_reg);
 		cds_set_wma_dfs_region(dfs_reg);
