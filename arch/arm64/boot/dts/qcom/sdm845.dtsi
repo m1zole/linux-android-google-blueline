@@ -3175,7 +3175,7 @@
 		aoss0-usr {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&tsens0 0>;
 			trips {
 				active-config0 {
@@ -3189,7 +3189,7 @@
 		cpu0-silver-usr {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&tsens0 1>;
 			trips {
 				active-config0 {
@@ -3203,7 +3203,7 @@
 		cpu1-silver-usr {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&tsens0 2>;
 			trips {
 				active-config0 {
@@ -3217,7 +3217,7 @@
 		cpu2-silver-usr {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&tsens0 3>;
 			trips {
 				active-config0 {
@@ -3232,7 +3232,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 4>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3246,7 +3246,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 5>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3260,7 +3260,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 6>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3274,7 +3274,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 7>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3288,7 +3288,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 8>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3302,7 +3302,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 9>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3316,7 +3316,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 10>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3330,7 +3330,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens0 11>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3343,7 +3343,7 @@
 		gpu1-usr {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&tsens0 12>;
 			trips {
 				active-config0 {
@@ -3358,7 +3358,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3372,7 +3372,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 1>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3388,7 +3388,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 2>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3402,7 +3402,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 3>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3416,7 +3416,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 4>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3430,7 +3430,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 5>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3444,7 +3444,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 6>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3458,7 +3458,7 @@
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
 			thermal-sensors = <&tsens1 7>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			trips {
 				active-config0 {
 					temperature = <125000>;
@@ -3733,7 +3733,7 @@
 		lmh-dcvs-01 {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&lmh_dcvs1>;
 
 			trips {
@@ -3748,7 +3748,7 @@
 		lmh-dcvs-00 {
 			polling-delay-passive = <0>;
 			polling-delay = <0>;
-			thermal-governor = "user_space";
+			thermal-governor = "step_wise";
 			thermal-sensors = <&lmh_dcvs0>;
 
 			trips {
